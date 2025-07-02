@@ -539,7 +539,7 @@ async def on_message(new_msg: discord.Message) -> None:
                 # Make another API call with tool results
                 try:
                     final_response = await openai_client.chat.completions.create(
-                        model=provider_slash_model,
+                        model=api_model_name,  # Use the same model name format as initial request
                         messages=messages[::-1],
                         stream=False
                     )
