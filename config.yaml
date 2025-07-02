@@ -1,6 +1,6 @@
 bot_token: "${{ BOT_TOKEN }}"
 client_id: "${{ CLIENT_ID }}"
-status_message: "💬 Claude with tools & web search"
+status_message: "💬 Claude | Tools • Web Search • Scraping"
 
 max_text: 100000
 max_images: 5
@@ -29,18 +29,18 @@ providers:
 
 models:
   # Main models with web search
-  openrouter/anthropic/claude-sonnet-4:online: {temperature: 0.7}
-  openrouter/openai/gpt-4.1:online: {temperature: 0.7}
-  openrouter/google/gemini-2.5-pro:online: {temperature: 0.7}
+  "anthropic/claude-sonnet-4:online": {temperature: 0.7}
+  "openai/gpt-4.1:online": {temperature: 0.7}
+  "google/gemini-2.5-pro:online": {temperature: 0.7}
   
   # Without web search
-  openrouter/anthropic/claude-sonnet-4: {temperature: 0.7}
-  openrouter/openai/gpt-4.1: {temperature: 0.7}
-  openrouter/google/gemini-2.5-pro: {temperature: 0.7}
+  anthropic/claude-sonnet-4: {temperature: 0.7}
+  openai/gpt-4.1: {temperature: 0.7}
+  google/gemini-2.5-pro: {temperature: 0.7}
   
   # Additional models
-  openrouter/anthropic/claude-3.5-sonnet:online: {temperature: 0.7}
-  openrouter/openai/gpt-4o:online: {temperature: 0.7}
+  "anthropic/claude-3.5-sonnet:online": {temperature: 0.7}
+  "openai/gpt-4o:online": {temperature: 0.7}
 
 system_prompt: |
   You are Claude, a helpful AI assistant integrated into Discord.
