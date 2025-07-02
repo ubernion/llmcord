@@ -3,6 +3,8 @@ from base64 import b64encode
 from dataclasses import dataclass, field
 from datetime import datetime
 import logging
+import os
+import re
 from typing import Any, Literal, Optional
 
 import discord
@@ -29,9 +31,34 @@ EDIT_DELAY_SECONDS = 1
 MAX_MESSAGE_NODES = 500
 
 
+def replace_env_vars(obj: Any) -> Any:
+    """Recursively replace environment variable placeholders in config."""
+    if isinstance(obj, str):
+        # Match ${VAR} or ${{ VAR }} patterns
+        def replacer(match):
+            var_name = match.group(1).strip()
+            value = os.environ.get(var_name)
+            if value is None:
+                logging.warning(f"Environment variable {var_name} not found, keeping placeholder")
+                return match.group(0)
+            return value
+        
+        # Replace both ${VAR} and ${{ VAR }} patterns
+        obj = re.sub(r'\$\{\{\s*(\w+)\s*\}\}', replacer, obj)
+        obj = re.sub(r'\$\{(\w+)\}', replacer, obj)
+        return obj
+    elif isinstance(obj, dict):
+        return {k: replace_env_vars(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [replace_env_vars(item) for item in obj]
+    else:
+        return obj
+
+
 def get_config(filename: str = "config.yaml") -> dict[str, Any]:
     with open(filename, encoding="utf-8") as file:
-        return yaml.safe_load(file)
+        config = yaml.safe_load(file)
+    return replace_env_vars(config)
 
 
 config = get_config()
