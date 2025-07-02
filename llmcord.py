@@ -539,6 +539,9 @@ async def on_message(new_msg: discord.Message) -> None:
                 
                 # Make another API call with tool results
                 try:
+                    # Debug: log the messages to understand the issue
+                    logging.info(f"Messages being sent for tool response (first 3): {json.dumps(messages[:3], indent=2)[:500]}...")
+                    
                     final_response = await openai_client.chat.completions.create(
                         model=api_model_name,  # Use the same model name format as initial request
                         messages=messages[::-1],
