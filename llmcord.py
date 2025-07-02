@@ -505,10 +505,17 @@ async def on_message(new_msg: discord.Message) -> None:
                 tool_results = []
                 
                 # Send a tool usage indicator
+                tool_names = []
+                for tc in tool_calls:
+                    name = tc['function']['name']
+                    # Convert snake_case to readable text
+                    readable_name = name.replace('_', ' ').title()
+                    tool_names.append(readable_name)
+                
                 if response_msgs:
-                    await response_msgs[-1].reply(content=f"🔧 Using tool: {', '.join([tc['function']['name'] for tc in tool_calls])}...", silent=True)
+                    await response_msgs[-1].reply(content=f"🔧 {', '.join(tool_names)}...", silent=True)
                 else:
-                    tool_msg = await new_msg.reply(content=f"🔧 Using tool: {', '.join([tc['function']['name'] for tc in tool_calls])}...", silent=True)
+                    tool_msg = await new_msg.reply(content=f"🔧 {', '.join(tool_names)}...", silent=True)
                     response_msgs.append(tool_msg)
                 
                 for tool_call in tool_calls:
