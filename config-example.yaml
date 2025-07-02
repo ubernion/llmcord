@@ -11,6 +11,9 @@ max_messages: 25
 use_plain_responses: false
 allow_dms: true
 
+# Cache control settings for Anthropic models via OpenRouter
+cache_min_length: 1000  # Minimum text length to consider for caching
+
 permissions:
   users:
     admin_ids: []

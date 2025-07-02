@@ -85,6 +85,48 @@ class DiscordTools:
             {
                 "type": "function",
                 "function": {
+                    "name": "list_channels",
+                    "description": "List all text channels in the current server that the bot has access to. Useful for finding relevant channels to search for context.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "include_category": {
+                                "type": "string",
+                                "description": "Filter channels by category name (optional)"
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_messages_from_channel",
+                    "description": "Get recent messages from a specific Discord channel by ID. Use list_channels first to find channel IDs.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "channel_id": {
+                                "type": "string",
+                                "description": "The Discord channel ID to fetch messages from"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of messages to retrieve (default: 20, max: 100)",
+                                "default": 20
+                            },
+                            "search_term": {
+                                "type": "string",
+                                "description": "Optional search term to filter messages"
+                            }
+                        },
+                        "required": ["channel_id"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "scrape_webpage",
                     "description": "Extract clean, readable content from any webpage. Perfect for reading articles, documentation, blog posts, or any web content. Removes ads, navigation, and other clutter to get just the main content.",
                     "parameters": {
@@ -761,6 +803,126 @@ class DiscordTools:
                 "error": f"Failed to crawl {url}: {str(e)}"
             }
     
+    async def list_channels(
+        self,
+        channel: discord.TextChannel,
+        include_category: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """List all text channels in the server."""
+        try:
+            if not hasattr(channel, 'guild') or not channel.guild:
+                return {
+                    "error": "Cannot list channels in DMs",
+                    "channels": []
+                }
+            
+            channels = []
+            for ch in channel.guild.text_channels:
+                # Check if bot has read permissions
+                if not ch.permissions_for(channel.guild.me).read_messages:
+                    continue
+                
+                # Filter by category if specified
+                if include_category and ch.category:
+                    if include_category.lower() not in ch.category.name.lower():
+                        continue
+                elif include_category and not ch.category:
+                    continue
+                
+                channel_info = {
+                    "id": str(ch.id),
+                    "name": ch.name,
+                    "category": ch.category.name if ch.category else "No category",
+                    "topic": ch.topic[:100] if ch.topic else None,
+                    "is_current": ch.id == channel.id
+                }
+                channels.append(channel_info)
+            
+            # Sort by category then name
+            channels.sort(key=lambda x: (x["category"], x["name"]))
+            
+            return {
+                "server": channel.guild.name,
+                "channel_count": len(channels),
+                "channels": channels
+            }
+            
+        except Exception as e:
+            logging.error(f"Error listing channels: {e}")
+            return {
+                "error": f"Failed to list channels: {str(e)}"
+            }
+    
+    async def get_messages_from_channel(
+        self,
+        channel: discord.TextChannel,
+        channel_id: str,
+        limit: int = 20,
+        search_term: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get messages from a specific channel."""
+        try:
+            # Get the target channel
+            target_channel = self.bot.get_channel(int(channel_id))
+            if not target_channel:
+                return {"error": f"Channel {channel_id} not found"}
+            
+            # Check permissions
+            if not target_channel.permissions_for(channel.guild.me).read_messages:
+                return {"error": f"No permission to read channel {target_channel.name}"}
+            
+            # Validate we're in the same guild (security)
+            if hasattr(channel, 'guild') and hasattr(target_channel, 'guild'):
+                if channel.guild.id != target_channel.guild.id:
+                    return {"error": "Can only access channels in the same server"}
+            
+            limit = min(max(limit, 1), 100)
+            
+            messages = []
+            async for msg in target_channel.history(limit=limit if not search_term else 500):
+                # Filter by search term if provided
+                if search_term and search_term.lower() not in msg.content.lower():
+                    continue
+                
+                message_data = {
+                    "id": str(msg.id),
+                    "author": {
+                        "name": msg.author.display_name,
+                        "id": str(msg.author.id),
+                        "bot": msg.author.bot
+                    },
+                    "content": msg.content,
+                    "timestamp": msg.created_at.isoformat(),
+                    "channel": target_channel.name
+                }
+                
+                messages.append(message_data)
+                
+                if len(messages) >= limit:
+                    break
+            
+            # Reverse to show chronological order
+            messages.reverse()
+            
+            return {
+                "channel": {
+                    "id": str(target_channel.id),
+                    "name": target_channel.name,
+                    "category": target_channel.category.name if target_channel.category else None
+                },
+                "message_count": len(messages),
+                "search_term": search_term,
+                "messages": messages
+            }
+            
+        except ValueError:
+            return {"error": "Invalid channel ID format"}
+        except Exception as e:
+            logging.error(f"Error getting messages from channel {channel_id}: {e}")
+            return {
+                "error": f"Failed to get messages: {str(e)}"
+            }
+    
     async def extract_structured_data(
         self,
         urls: List[str],
@@ -880,6 +1042,18 @@ class DiscordTools:
                 arguments["urls"],
                 arguments["extraction_prompt"],
                 arguments.get("schema")
+            )
+        elif tool_name == "list_channels":
+            return await self.list_channels(
+                channel,
+                arguments.get("include_category")
+            )
+        elif tool_name == "get_messages_from_channel":
+            return await self.get_messages_from_channel(
+                channel,
+                arguments["channel_id"],
+                arguments.get("limit", 20),
+                arguments.get("search_term")
             )
         else:
             return {"error": f"Unknown tool: {tool_name}"}

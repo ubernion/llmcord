@@ -7,6 +7,7 @@ import os
 import re
 from typing import Any, Literal, Optional
 import json
+import copy
 
 import discord
 from discord.app_commands import Choice
@@ -100,6 +101,65 @@ class MsgNode:
     parent_msg: Optional[discord.Message] = None
 
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+def apply_anthropic_cache_control(messages: list[dict], config: dict) -> list[dict]:
+    """
+    Apply cache control breakpoints to messages for Anthropic models via OpenRouter.
+    
+    Rules:
+    - Maximum 4 breakpoints allowed
+    - Cache expires in 5 minutes
+    - Prioritize system prompt and older/larger messages
+    - Only apply to text content in multipart messages
+    """
+    MIN_CACHE_LENGTH = config.get("cache_min_length", 1000)  # Minimum text length to consider caching
+    MAX_BREAKPOINTS = 4
+    
+    # Create a deep copy to avoid modifying the original
+    messages = copy.deepcopy(messages)
+    
+    # Convert all messages to multipart format if needed
+    for msg in messages:
+        if isinstance(msg.get("content"), str):
+            msg["content"] = [{"type": "text", "text": msg["content"]}]
+    
+    # Collect candidates for caching (message index, content index, text length)
+    cache_candidates = []
+    
+    for msg_idx, msg in enumerate(messages):
+        if isinstance(msg.get("content"), list):
+            for content_idx, content in enumerate(msg["content"]):
+                if content.get("type") == "text" and len(content.get("text", "")) >= MIN_CACHE_LENGTH:
+                    # Prioritize system messages, then older messages
+                    priority = 0 if msg["role"] == "system" else msg_idx + 1
+                    cache_candidates.append({
+                        "msg_idx": msg_idx,
+                        "content_idx": content_idx,
+                        "length": len(content["text"]),
+                        "priority": priority,
+                        "role": msg["role"]
+                    })
+    
+    # Sort by priority (system first, then older messages), then by length (larger first)
+    cache_candidates.sort(key=lambda x: (x["priority"], -x["length"]))
+    
+    # Apply cache control to top candidates
+    breakpoints_applied = 0
+    for candidate in cache_candidates[:MAX_BREAKPOINTS]:
+        msg_idx = candidate["msg_idx"]
+        content_idx = candidate["content_idx"]
+        
+        # Add cache_control to the content
+        messages[msg_idx]["content"][content_idx]["cache_control"] = {"type": "ephemeral"}
+        breakpoints_applied += 1
+        
+        logging.info(f"Applied cache control to {candidate['role']} message (index {msg_idx}, length {candidate['length']})")
+    
+    if breakpoints_applied > 0:
+        logging.info(f"Applied {breakpoints_applied} cache control breakpoints for Anthropic model")
+    
+    return messages
 
 
 @discord_bot.tree.command(name="model", description="View or switch the current model")
@@ -325,6 +385,11 @@ async def on_message(new_msg: discord.Message) -> None:
         for warning in sorted(user_warnings):
             embed.add_field(name=warning, value="", inline=False)
 
+    # Apply cache control for Anthropic models via OpenRouter
+    is_anthropic = provider == "openrouter" and ("anthropic" in model.lower() or "claude" in model.lower())
+    if is_anthropic:
+        messages = apply_anthropic_cache_control(messages, config)
+
     try:
         async with new_msg.channel.typing():
             # Create the completion request with optional tools
@@ -354,8 +419,15 @@ async def on_message(new_msg: discord.Message) -> None:
                     "effort": "medium"
                 }
             
+            # Enable usage tracking for Anthropic models to see cache savings
+            if is_anthropic:
+                if "extra_body" not in create_params:
+                    create_params["extra_body"] = {}
+                create_params["extra_body"]["usage"] = {"include": True}
+            
             # Stream the response
             tool_calls = []
+            cache_discount = None
             async for curr_chunk in await openai_client.chat.completions.create(**create_params):
                 if finish_reason != None:
                     break
@@ -364,6 +436,11 @@ async def on_message(new_msg: discord.Message) -> None:
                     continue
 
                 finish_reason = choice.finish_reason
+                
+                # Check for cache usage information
+                if is_anthropic and hasattr(curr_chunk, 'usage') and curr_chunk.usage:
+                    if hasattr(curr_chunk.usage, 'cache_discount'):
+                        cache_discount = curr_chunk.usage.cache_discount
 
                 # Handle tool calls
                 if hasattr(choice.delta, 'tool_calls') and choice.delta.tool_calls:
@@ -488,6 +565,10 @@ async def on_message(new_msg: discord.Message) -> None:
                 except Exception as e:
                     logging.error(f"Error getting final response after tools: {e}")
 
+            # Log cache discount if available
+            if is_anthropic and cache_discount is not None:
+                logging.info(f"Cache discount for Anthropic model: {cache_discount}")
+            
             if use_plain_responses:
                 for content in response_contents:
                     reply_to_msg = new_msg if response_msgs == [] else response_msgs[-1]
