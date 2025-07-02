@@ -103,7 +103,7 @@ class DiscordTools:
                             "only_main_content": {
                                 "type": "boolean",
                                 "description": "Extract only the main article content, removing sidebars and unrelated sections",
-                                "default": true
+                                "default": True
                             }
                         },
                         "required": ["url"]
@@ -239,7 +239,7 @@ class DiscordTools:
                             "schema": {
                                 "type": "object",
                                 "description": "Optional JSON schema to structure the output",
-                                "default": null
+                                "default": None
                             }
                         },
                         "required": ["urls", "extraction_prompt"]
