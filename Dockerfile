@@ -1,13 +1,23 @@
 FROM python:3.13-slim
 
-ARG DEBIAN_FRONTEND=noninteractive
+# Copy uv binary from distroless image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Set environment variables for uv
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
 
 WORKDIR /app
 
-COPY requirements.txt .
+# First, copy dependency files and install deps (layer caching)
+COPY pyproject.toml uv.lock* ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --no-dev
 
-RUN pip install --no-cache-dir -r requirements.txt
-
+# Then copy source code and install project
 COPY . .
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
-CMD ["python", "llmcord.py"]
+# Run with uv
+CMD ["uv", "run", "python", "llmcord.py"]
