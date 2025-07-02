@@ -518,24 +518,28 @@ async def on_message(new_msg: discord.Message) -> None:
                         
                         tool_results.append(result)
                         
-                        # Add tool result to messages for follow-up
-                        messages.insert(0, {
-                            "role": "tool",
-                            "tool_call_id": tool_call["id"],
-                            "name": func_name,
-                            "content": json.dumps(result)
-                        })
+                        # Don't add tool result yet, we'll add it after the assistant message
                         
                     except Exception as e:
                         logging.error(f"Error executing tool {func_name}: {e}")
                         tool_results.append({"error": str(e)})
                 
-                # Continue the conversation with tool results
+                # Add assistant message with tool calls first
                 messages.insert(0, {
                     "role": "assistant",
                     "content": None,  # Important: content should be None when using tools
                     "tool_calls": tool_calls
                 })
+                
+                # Now add tool results AFTER the assistant message (so they come after when reversed)
+                for i, tool_call in enumerate(tool_calls):
+                    func_name = tool_call["function"]["name"]
+                    messages.insert(0, {
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "name": func_name,
+                        "content": json.dumps(tool_results[i])
+                    })
                 
                 # Make another API call with tool results
                 try:
