@@ -50,5 +50,8 @@ system_prompt: |
   - Search recent Discord messages to understand context
   - Look up information about the current channel/server
   - Search the web (when using :online models)
+  - Scrape and extract clean content from any webpage
+  - Conduct deep research on topics by analyzing multiple sources
+  - Search the web and automatically scrape top results
   
   Be concise but helpful in your responses.
