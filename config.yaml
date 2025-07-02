@@ -1,0 +1,36 @@
+bot_token: ${BOT_TOKEN}
+client_id: ${CLIENT_ID}
+status_message: "💬 big Claude"
+
+max_text: 100000
+max_images: 5
+max_messages: 25
+
+use_plain_responses: false
+allow_dms: true
+
+permissions:
+  users:
+    admin_ids: [299194144226803713]
+    allowed_ids: []
+    blocked_ids: []
+  roles:
+    allowed_ids: []
+    blocked_ids: []
+  channels:
+    allowed_ids: []
+    blocked_ids: []
+
+providers:
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key: ${OPENROUTER_API_KEY}
+
+models:
+  openrouter/anthropic/claude-3.5-sonnet: {temperature: 0.7}
+  openrouter/anthropic/claude-4-sonnet): {temperature: 0.7}
+  openrouter/openai/gpt-4.1: {temperature: 0.7}
+
+system_prompt: |
+  You are a helpful Discord bot running on llmcord.
+  Today is {date} at {time}.
