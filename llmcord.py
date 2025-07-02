@@ -522,6 +522,7 @@ async def on_message(new_msg: discord.Message) -> None:
                         messages.insert(0, {
                             "role": "tool",
                             "tool_call_id": tool_call["id"],
+                            "name": func_name,
                             "content": json.dumps(result)
                         })
                         
@@ -532,7 +533,7 @@ async def on_message(new_msg: discord.Message) -> None:
                 # Continue the conversation with tool results
                 messages.insert(0, {
                     "role": "assistant",
-                    "content": "\n".join(response_contents) if response_contents else "I'll analyze the information...",
+                    "content": None,  # Important: content should be None when using tools
                     "tool_calls": tool_calls
                 })
                 
