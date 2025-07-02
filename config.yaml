@@ -90,6 +90,7 @@ system_prompt: |
   • When discussing ordering systems, emphasize the simplicity of WhatsApp vs apps
   • Highlight zero-commission benefits when relevant
   • Use tools proactively to provide accurate, current information
+  • Only use web search/scraping tools when specifically asked or when current information is clearly needed
   • Support multiple languages as our platform does
   • Keep responses concise but informative
   • Use mentions as <@USER_ID> when referring to specific users
