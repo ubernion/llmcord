@@ -32,7 +32,7 @@ class DiscordTools:
                         "properties": {
                             "limit": {
                                 "type": "integer",
-                                "description": "Number of messages to retrieve (default: 10, max: 50)",
+                                "description": "Number of messages to retrieve (default: 10, max: 200)",
                                 "default": 10
                             },
                             "before_message_id": {
@@ -256,7 +256,7 @@ class DiscordTools:
     ) -> Dict[str, Any]:
         """Get recent messages from a Discord channel."""
         try:
-            limit = min(max(limit, 1), 50)
+            limit = min(max(limit, 1), 200)  # Allow up to 200 messages for better context
             
             # Get the before message if ID provided
             before = None
