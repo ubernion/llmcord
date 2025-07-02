@@ -67,7 +67,7 @@ def get_config(filename: str = "config.yaml") -> dict[str, Any]:
 
 config = get_config()
 # Set default model to Claude Sonnet 4 with online
-curr_model = "openrouter/anthropic/claude-sonnet-4:online"
+curr_model = "anthropic/claude-sonnet-4:online"
 if curr_model not in config["models"]:
     curr_model = next(iter(config["models"]))
 
@@ -92,6 +92,7 @@ class MsgNode:
 
     role: Literal["user", "assistant"] = "assistant"
     user_id: Optional[int] = None
+    display_name: Optional[str] = None
 
     has_bad_attachments: bool = False
     fetch_parent_failed: bool = False
@@ -235,6 +236,7 @@ async def on_message(new_msg: discord.Message) -> None:
                 curr_node.role = "assistant" if curr_msg.author == discord_bot.user else "user"
 
                 curr_node.user_id = curr_msg.author.id if curr_node.role == "user" else None
+                curr_node.display_name = curr_msg.author.display_name if curr_node.role == "user" else None
 
                 curr_node.has_bad_attachments = len(curr_msg.attachments) > len(good_attachments)
 
@@ -268,6 +270,13 @@ async def on_message(new_msg: discord.Message) -> None:
                 content = curr_node.text[:max_text]
 
             if content != "":
+                # Add display name to the beginning of user messages for context
+                if curr_node.role == "user" and curr_node.display_name:
+                    if isinstance(content, str):
+                        content = f"[{curr_node.display_name}]: {content}"
+                    elif isinstance(content, list) and content and content[0].get("type") == "text":
+                        content[0]["text"] = f"[{curr_node.display_name}]: {content[0]['text']}"
+                
                 message = dict(content=content, role=curr_node.role)
                 if accept_usernames and curr_node.user_id != None:
                     message["name"] = str(curr_node.user_id)
@@ -291,8 +300,6 @@ async def on_message(new_msg: discord.Message) -> None:
         now = datetime.now().astimezone()
 
         system_prompt = system_prompt.replace("{date}", now.strftime("%B %d %Y")).replace("{time}", now.strftime("%H:%M:%S %Z%z")).strip()
-        if accept_usernames:
-            system_prompt += "\nUser's names are their Discord IDs and should be typed as '<@ID>'."
 
         messages.append(dict(role="system", content=system_prompt))
     
