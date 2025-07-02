@@ -507,7 +507,11 @@ async def on_message(new_msg: discord.Message) -> None:
                 # Send a tool usage indicator with descriptive phrases
                 tool_descriptions = []
                 for tc in tool_calls:
-                    name = tc['function']['name']
+                    # Handle both dict and object formats
+                    if isinstance(tc, dict):
+                        name = tc['function']['name']
+                    else:
+                        name = tc.function.name
                     # Map tool names to descriptive phrases
                     desc_map = {
                         'get_recent_messages': 'regarde les derniers messages',
@@ -530,11 +534,20 @@ async def on_message(new_msg: discord.Message) -> None:
                 else:
                     tool_msg = await new_msg.reply(content=f"_{', '.join(tool_descriptions)}_", silent=True)
                     response_msgs.append(tool_msg)
+                    msg_nodes[tool_msg.id] = MsgNode(parent_msg=new_msg)
+                    await msg_nodes[tool_msg.id].lock.acquire()
                 
                 for tool_call in tool_calls:
                     try:
-                        func_name = tool_call["function"]["name"]
-                        func_args = json.loads(tool_call["function"]["arguments"])
+                        # Handle both dict and object formats
+                        if isinstance(tool_call, dict):
+                            func_name = tool_call["function"]["name"]
+                            func_args = json.loads(tool_call["function"]["arguments"])
+                            tool_id = tool_call["id"]
+                        else:
+                            func_name = tool_call.function.name
+                            func_args = json.loads(tool_call.function.arguments)
+                            tool_id = tool_call.id
                         
                         # Execute the tool
                         result = await discord_tools.handle_tool_call(
@@ -560,10 +573,17 @@ async def on_message(new_msg: discord.Message) -> None:
                 
                 # Now add tool results AFTER the assistant message (so they come after when reversed)
                 for i, tool_call in enumerate(tool_calls):
-                    func_name = tool_call["function"]["name"]
+                    # Handle both dict and object formats
+                    if isinstance(tool_call, dict):
+                        func_name = tool_call["function"]["name"]
+                        tool_id = tool_call["id"]
+                    else:
+                        func_name = tool_call.function.name
+                        tool_id = tool_call.id
+                    
                     messages.insert(0, {
                         "role": "tool",
-                        "tool_call_id": tool_call["id"],
+                        "tool_call_id": tool_id,
                         "name": func_name,
                         "content": json.dumps(tool_results[i])
                     })
@@ -587,7 +607,7 @@ async def on_message(new_msg: discord.Message) -> None:
                     # Check if more tools are requested
                     if finish_reason == "tool_calls" and hasattr(final_msg, 'tool_calls') and final_msg.tool_calls:
                         # Add assistant message and prepare for next loop iteration
-                        messages.insert(0, final_msg.dict())
+                        messages.insert(0, final_msg.model_dump())
                         tool_calls = final_msg.tool_calls
                         continue  # Loop back to process more tools
                     
@@ -600,14 +620,23 @@ async def on_message(new_msg: discord.Message) -> None:
                             chunks = [final_content[i:i+2000] for i in range(0, len(final_content), 2000)]
                             for chunk in chunks[:3]:  # Limit to 3 messages
                                 if response_msgs:
-                                    await response_msgs[-1].reply(content=chunk, suppress_embeds=True, silent=True)
+                                    response_msg = await response_msgs[-1].reply(content=chunk, suppress_embeds=True, silent=True)
                                 else:
-                                    await new_msg.reply(content=chunk, suppress_embeds=True, silent=True)
+                                    response_msg = await new_msg.reply(content=chunk, suppress_embeds=True, silent=True)
+                                response_msgs.append(response_msg)
+                                msg_nodes[response_msg.id] = MsgNode(parent_msg=new_msg)
+                                await msg_nodes[response_msg.id].lock.acquire()
                         else:
                             if response_msgs:
-                                await response_msgs[-1].reply(content=final_content, suppress_embeds=True, silent=True)
+                                response_msg = await response_msgs[-1].reply(content=final_content, suppress_embeds=True, silent=True)
                             else:
-                                await new_msg.reply(content=final_content, suppress_embeds=True, silent=True)
+                                response_msg = await new_msg.reply(content=final_content, suppress_embeds=True, silent=True)
+                            response_msgs.append(response_msg)
+                            msg_nodes[response_msg.id] = MsgNode(parent_msg=new_msg)
+                            await msg_nodes[response_msg.id].lock.acquire()
+                        
+                        # Update response contents for final processing
+                        response_contents.append(final_content)
                     
                     # Exit the tool loop
                     tool_calls = None
