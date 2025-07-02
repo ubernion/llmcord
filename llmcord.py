@@ -518,23 +518,35 @@ async def on_message(new_msg: discord.Message) -> None:
                         
                         tool_results.append(result)
                         
-                        # Add tool result to messages for follow-up
+                        # Add tool result to messages for follow-up (convert to standard format)
                         messages.insert(0, {
                             "role": "tool",
-                            "tool_call_id": tool_call["id"],
-                            "name": func_name,
-                            "content": json.dumps(result)
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": tool_call["id"],
+                                    "content": json.dumps(result)
+                                }
+                            ]
                         })
                         
                     except Exception as e:
                         logging.error(f"Error executing tool {func_name}: {e}")
                         tool_results.append({"error": str(e)})
                 
-                # Continue the conversation with tool results
+                # Continue the conversation with tool results (convert to standard format)
+                tool_calls_content = []
+                for tool_call in tool_calls:
+                    tool_calls_content.append({
+                        "type": "tool_use",
+                        "id": tool_call["id"],
+                        "name": tool_call["function"]["name"],
+                        "input": json.loads(tool_call["function"]["arguments"])
+                    })
+                
                 messages.insert(0, {
                     "role": "assistant",
-                    "content": None,  # Important: content should be None when using tools
-                    "tool_calls": tool_calls
+                    "content": tool_calls_content
                 })
                 
                 # Make another API call with tool results
