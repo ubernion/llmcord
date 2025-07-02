@@ -504,18 +504,31 @@ async def on_message(new_msg: discord.Message) -> None:
                 # Process tool calls and show indicator
                 tool_results = []
                 
-                # Send a tool usage indicator
-                tool_names = []
+                # Send a tool usage indicator with descriptive phrases
+                tool_descriptions = []
                 for tc in tool_calls:
                     name = tc['function']['name']
-                    # Convert snake_case to readable text
-                    readable_name = name.replace('_', ' ').title()
-                    tool_names.append(readable_name)
+                    # Map tool names to descriptive phrases
+                    desc_map = {
+                        'get_recent_messages': 'regarde les derniers messages',
+                        'search_messages': 'cherche dans les messages',
+                        'get_channel_info': 'vérifie les infos du channel',
+                        'list_channels': 'liste les channels disponibles',
+                        'get_messages_from_channel': 'récupère des messages d\'un autre channel',
+                        'scrape_webpage': 'scrape une page web',
+                        'deep_research': 'fait une recherche approfondie',
+                        'search_and_scrape': 'recherche et scrape sur le web',
+                        'batch_scrape_webpages': 'scrape plusieurs pages',
+                        'crawl_website': 'crawl un site web',
+                        'extract_structured_data': 'extrait des données structurées'
+                    }
+                    desc = desc_map.get(name, name.replace('_', ' '))
+                    tool_descriptions.append(desc)
                 
                 if response_msgs:
-                    await response_msgs[-1].reply(content=f"🔧 {', '.join(tool_names)}...", silent=True)
+                    await response_msgs[-1].reply(content=f"_{', '.join(tool_descriptions)}_", silent=True)
                 else:
-                    tool_msg = await new_msg.reply(content=f"🔧 {', '.join(tool_names)}...", silent=True)
+                    tool_msg = await new_msg.reply(content=f"_{', '.join(tool_descriptions)}_", silent=True)
                     response_msgs.append(tool_msg)
                 
                 for tool_call in tool_calls:
