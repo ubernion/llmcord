@@ -10,4 +10,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "llmcord.py"]
+CMD ["sh", "-c", "echo 'BOT_TOKEN starts with:' && echo $BOT_TOKEN | head -c 10 && echo '...' && python llmcord.py"]
