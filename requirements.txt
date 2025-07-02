@@ -1,4 +1,4 @@
 discord.py
 httpx
-openai
+openai>=1.35.0
 pyyaml

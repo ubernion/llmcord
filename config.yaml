@@ -1,13 +1,14 @@
 bot_token: "${{ BOT_TOKEN }}"
 client_id: "${{ CLIENT_ID }}"
-status_message: "💬 big Claude"
+status_message: "💬 Claude with tools & web search"
 
 max_text: 100000
 max_images: 5
 max_messages: 25
 
-use_plain_responses: false
+use_plain_responses: true
 allow_dms: true
+enable_tools: true
 
 permissions:
   users:
@@ -27,10 +28,27 @@ providers:
     api_key: "${{ OPENROUTER_API_KEY }}"
 
 models:
-  openrouter/anthropic/claude-3.5-sonnet: {temperature: 0.7}
-  openrouter/anthropic/claude-4-sonnet): {temperature: 0.7}
+  # Main models with web search
+  openrouter/anthropic/claude-sonnet-4:online: {temperature: 0.7}
+  openrouter/openai/gpt-4.1:online: {temperature: 0.7}
+  openrouter/google/gemini-2.5-pro:online: {temperature: 0.7}
+  
+  # Without web search
+  openrouter/anthropic/claude-sonnet-4: {temperature: 0.7}
   openrouter/openai/gpt-4.1: {temperature: 0.7}
+  openrouter/google/gemini-2.5-pro: {temperature: 0.7}
+  
+  # Additional models
+  openrouter/anthropic/claude-3.5-sonnet:online: {temperature: 0.7}
+  openrouter/openai/gpt-4o:online: {temperature: 0.7}
 
 system_prompt: |
-  You are a helpful Discord bot running on llmcord.
+  You are Claude, a helpful AI assistant integrated into Discord.
   Today is {date} at {time}.
+  
+  You have access to tools that let you:
+  - Search recent Discord messages to understand context
+  - Look up information about the current channel/server
+  - Search the web (when using :online models)
+  
+  Be concise but helpful in your responses.

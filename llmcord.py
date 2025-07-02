@@ -6,6 +6,7 @@ import logging
 import os
 import re
 from typing import Any, Literal, Optional
+import json
 
 import discord
 from discord.app_commands import Choice
@@ -14,6 +15,8 @@ import httpx
 from openai import AsyncOpenAI
 import yaml
 
+from tools import DiscordTools
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s: %(message)s",
@@ -21,11 +24,12 @@ logging.basicConfig(
 
 VISION_MODEL_TAGS = ("gpt-4", "o3", "o4", "claude", "gemini", "gemma", "llama", "pixtral", "mistral", "vision", "vl")
 PROVIDERS_SUPPORTING_USERNAMES = ("openai", "x-ai")
+TOOLS_SUPPORTING_MODELS = ("gpt-4", "claude", "gemini", "mistral")
 
 EMBED_COLOR_COMPLETE = discord.Color.dark_green()
 EMBED_COLOR_INCOMPLETE = discord.Color.orange()
 
-STREAMING_INDICATOR = " ⚪"
+STREAMING_INDICATOR = "..."
 EDIT_DELAY_SECONDS = 1
 
 MAX_MESSAGE_NODES = 500
@@ -62,7 +66,10 @@ def get_config(filename: str = "config.yaml") -> dict[str, Any]:
 
 
 config = get_config()
-curr_model = next(iter(config["models"]))
+# Set default model to Claude Sonnet 4 with online
+curr_model = "openrouter/anthropic/claude-sonnet-4:online"
+if curr_model not in config["models"]:
+    curr_model = next(iter(config["models"]))
 
 msg_nodes = {}
 last_task_time = 0
@@ -71,6 +78,9 @@ intents = discord.Intents.default()
 intents.message_content = True
 activity = discord.CustomActivity(name=(config["status_message"] or "github.com/jakobdylanc/llmcord")[:128])
 discord_bot = commands.Bot(intents=intents, activity=activity, command_prefix=None)
+
+# Initialize Discord tools
+discord_tools = DiscordTools(discord_bot)
 
 httpx_client = httpx.AsyncClient()
 
@@ -135,7 +145,11 @@ async def on_message(new_msg: discord.Message) -> None:
 
     is_dm = new_msg.channel.type == discord.ChannelType.private
 
-    if (not is_dm and discord_bot.user not in new_msg.mentions) or new_msg.author.bot:
+    # Check if the message mentions the bot or contains "Claude" (case insensitive)
+    mentioned = discord_bot.user in new_msg.mentions
+    contains_claude = "claude" in new_msg.content.lower()
+    
+    if (not is_dm and not mentioned and not contains_claude) or new_msg.author.bot:
         return
 
     role_ids = set(role.id for role in getattr(new_msg.author, "roles", ()))
@@ -165,12 +179,23 @@ async def on_message(new_msg: discord.Message) -> None:
         return
 
     provider_slash_model = curr_model
-    provider, model = provider_slash_model.split("/", 1)
-    model_parameters = config["models"].get(provider_slash_model, None)
+    
+    # Check for model variants like :online or :thinking
+    base_model = provider_slash_model
+    model_variant = None
+    if ":" in provider_slash_model:
+        base_model, model_variant = provider_slash_model.rsplit(":", 1)
+    
+    provider, model = base_model.split("/", 1)
+    model_parameters = config["models"].get(base_model, {})
 
     base_url = config["providers"][provider]["base_url"]
     api_key = config["providers"][provider].get("api_key", "sk-no-key-required")
     openai_client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+    
+    # Check if model supports tools
+    supports_tools = any(tag in model.lower() for tag in TOOLS_SUPPORTING_MODELS)
+    use_tools = supports_tools and config.get("enable_tools", True) and not model_variant == "online"
 
     accept_images = any(x in model.lower() for x in VISION_MODEL_TAGS)
     accept_usernames = any(x in provider_slash_model.lower() for x in PROVIDERS_SUPPORTING_USERNAMES)
@@ -217,6 +242,7 @@ async def on_message(new_msg: discord.Message) -> None:
                     if (
                         curr_msg.reference == None
                         and discord_bot.user.mention not in curr_msg.content
+                        and "claude" not in curr_msg.content.lower()
                         and (prev_msg_in_channel := ([m async for m in curr_msg.channel.history(before=curr_msg, limit=1)] or [None])[0])
                         and prev_msg_in_channel.type in (discord.MessageType.default, discord.MessageType.reply)
                         and prev_msg_in_channel.author == (discord_bot.user if curr_msg.channel.type == discord.ChannelType.private else curr_msg.author)
@@ -269,22 +295,58 @@ async def on_message(new_msg: discord.Message) -> None:
             system_prompt += "\nUser's names are their Discord IDs and should be typed as '<@ID>'."
 
         messages.append(dict(role="system", content=system_prompt))
+    
+    # Prepare tool definitions if supported
+    tools = None
+    if use_tools:
+        tools = discord_tools.tool_definitions
 
     # Generate and send response message(s) (can be multiple if response is long)
     curr_content = finish_reason = edit_task = None
     response_msgs = []
     response_contents = []
 
-    embed = discord.Embed()
-    for warning in sorted(user_warnings):
-        embed.add_field(name=warning, value="", inline=False)
-
     use_plain_responses = config.get("use_plain_responses", False)
     max_message_length = 2000 if use_plain_responses else (4096 - len(STREAMING_INDICATOR))
+    
+    # Handle warnings
+    if user_warnings and use_plain_responses:
+        warning_msg = "⚠️ " + " | ".join(sorted(user_warnings))
+        await new_msg.reply(content=warning_msg, silent=True, delete_after=30)
+    elif user_warnings and not use_plain_responses:
+        embed = discord.Embed()
+        for warning in sorted(user_warnings):
+            embed.add_field(name=warning, value="", inline=False)
 
     try:
         async with new_msg.channel.typing():
-            async for curr_chunk in await openai_client.chat.completions.create(model=model, messages=messages[::-1], stream=True, extra_body=model_parameters):
+            # Create the completion request with optional tools
+            create_params = {
+                "model": provider_slash_model,  # Use full model name with variant
+                "messages": messages[::-1],
+                "stream": True
+            }
+            
+            # Add model parameters
+            if model_parameters:
+                create_params["extra_body"] = model_parameters
+            
+            # Add tools if supported
+            if tools:
+                create_params["tools"] = tools
+            
+            # Handle reasoning mode
+            if model_variant == "thinking":
+                if "extra_body" not in create_params:
+                    create_params["extra_body"] = {}
+                create_params["extra_body"]["reasoning"] = {
+                    "enabled": True,
+                    "effort": "medium"
+                }
+            
+            # Stream the response
+            tool_calls = []
+            async for curr_chunk in await openai_client.chat.completions.create(**create_params):
                 if finish_reason != None:
                     break
 
@@ -292,6 +354,23 @@ async def on_message(new_msg: discord.Message) -> None:
                     continue
 
                 finish_reason = choice.finish_reason
+
+                # Handle tool calls
+                if hasattr(choice.delta, 'tool_calls') and choice.delta.tool_calls:
+                    for tool_call in choice.delta.tool_calls:
+                        if len(tool_calls) <= tool_call.index:
+                            tool_calls.append({
+                                "id": "",
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""}
+                            })
+                        
+                        if tool_call.id:
+                            tool_calls[tool_call.index]["id"] = tool_call.id
+                        if tool_call.function.name:
+                            tool_calls[tool_call.index]["function"]["name"] = tool_call.function.name
+                        if tool_call.function.arguments:
+                            tool_calls[tool_call.index]["function"]["arguments"] += tool_call.function.arguments
 
                 prev_content = curr_content or ""
                 curr_content = choice.delta.content or ""
@@ -307,6 +386,8 @@ async def on_message(new_msg: discord.Message) -> None:
                 response_contents[-1] += new_content
 
                 if not use_plain_responses:
+                    if 'embed' not in locals():
+                        embed = discord.Embed()
                     ready_to_edit = (edit_task == None or edit_task.done()) and datetime.now().timestamp() - last_task_time >= EDIT_DELAY_SECONDS
                     msg_split_incoming = finish_reason == None and len(response_contents[-1] + curr_content) > max_message_length
                     is_final_edit = finish_reason != None or msg_split_incoming
@@ -330,6 +411,72 @@ async def on_message(new_msg: discord.Message) -> None:
                             edit_task = asyncio.create_task(response_msgs[-1].edit(embed=embed))
 
                         last_task_time = datetime.now().timestamp()
+            
+            # Handle tool calls if any
+            if tool_calls and finish_reason == "tool_calls":
+                # Process tool calls quietly
+                tool_results = []
+                
+                for tool_call in tool_calls:
+                    try:
+                        func_name = tool_call["function"]["name"]
+                        func_args = json.loads(tool_call["function"]["arguments"])
+                        
+                        # Execute the tool
+                        result = await discord_tools.handle_tool_call(
+                            func_name,
+                            func_args,
+                            new_msg.channel
+                        )
+                        
+                        tool_results.append(result)
+                        
+                        # Add tool result to messages for follow-up
+                        messages.insert(0, {
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": json.dumps(result)
+                        })
+                        
+                    except Exception as e:
+                        logging.error(f"Error executing tool {func_name}: {e}")
+                        tool_results.append({"error": str(e)})
+                
+                # Continue the conversation with tool results
+                messages.insert(0, {
+                    "role": "assistant",
+                    "content": "\n".join(response_contents) if response_contents else "I'll analyze the information...",
+                    "tool_calls": tool_calls
+                })
+                
+                # Make another API call with tool results
+                try:
+                    final_response = await openai_client.chat.completions.create(
+                        model=provider_slash_model,
+                        messages=messages[::-1],
+                        stream=False
+                    )
+                    
+                    if final_response.choices[0].message.content:
+                        # Send the final response naturally
+                        final_content = final_response.choices[0].message.content
+                        
+                        # Split long messages if needed
+                        if len(final_content) > 2000:
+                            chunks = [final_content[i:i+2000] for i in range(0, len(final_content), 2000)]
+                            for chunk in chunks[:3]:  # Limit to 3 messages
+                                if response_msgs:
+                                    await response_msgs[-1].reply(content=chunk, suppress_embeds=True, silent=True)
+                                else:
+                                    await new_msg.reply(content=chunk, suppress_embeds=True, silent=True)
+                        else:
+                            if response_msgs:
+                                await response_msgs[-1].reply(content=final_content, suppress_embeds=True, silent=True)
+                            else:
+                                await new_msg.reply(content=final_content, suppress_embeds=True, silent=True)
+                
+                except Exception as e:
+                    logging.error(f"Error getting final response after tools: {e}")
 
             if use_plain_responses:
                 for content in response_contents:
