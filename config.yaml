@@ -1,5 +1,5 @@
-bot_token: ${BOT_TOKEN}
-client_id: ${CLIENT_ID}
+bot_token: "${{ BOT_TOKEN }}"
+client_id: "${{ CLIENT_ID }}"
 status_message: "💬 big Claude"
 
 max_text: 100000
@@ -24,7 +24,7 @@ permissions:
 providers:
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
-    api_key: ${OPENROUTER_API_KEY}
+    api_key: "${{ OPENROUTER_API_KEY }}"
 
 models:
   openrouter/anthropic/claude-3.5-sonnet: {temperature: 0.7}
