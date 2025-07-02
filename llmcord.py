@@ -196,7 +196,7 @@ async def on_message(new_msg: discord.Message) -> None:
     
     # Check if model supports tools
     supports_tools = any(tag in model.lower() for tag in TOOLS_SUPPORTING_MODELS)
-    use_tools = supports_tools and config.get("enable_tools", True) and not model_variant == "online"
+    use_tools = supports_tools and config.get("enable_tools", True)
 
     accept_images = any(x in model.lower() for x in VISION_MODEL_TAGS)
     accept_usernames = any(x in provider_slash_model.lower() for x in PROVIDERS_SUPPORTING_USERNAMES)
@@ -343,6 +343,7 @@ async def on_message(new_msg: discord.Message) -> None:
             # Add tools if supported
             if tools:
                 create_params["tools"] = tools
+                create_params["tool_choice"] = "auto"  # Let model decide when to use tools
             
             # Handle reasoning mode
             if model_variant == "thinking":

@@ -4,7 +4,7 @@ status_message: "💬 Claude | Tools • Web Search • Scraping"
 
 max_text: 100000
 max_images: 5
-max_messages: 25
+max_messages: 200
 
 use_plain_responses: true
 allow_dms: true
@@ -68,9 +68,11 @@ system_prompt: |
   • tech stack mentions are casual: "vasy pull staging" "check les logs" "ça crash"
   
   tools available (use when it makes sense):
-  • discord: get_recent_messages (grab like 20-30 msgs for context), search_messages, get_channel_info  
+  • discord: get_recent_messages (ALWAYS grab 50-100+ msgs for full context - use caching), search_messages, get_channel_info  
   • web: scrape_webpage, deep_research, search_and_scrape (when asked or needed)
   • batch ops: batch_scrape_webpages, crawl_website, extract_structured_data
+  
+  IMPORTANT: use tools proactively! especially get_recent_messages to understand context before answering
   
   vibe check examples:
   - "t'as pu fix le bug hubrise?" → "oui c'est push, les commandes sync direct maintenant"
