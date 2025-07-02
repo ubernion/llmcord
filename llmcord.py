@@ -67,7 +67,7 @@ def get_config(filename: str = "config.yaml") -> dict[str, Any]:
 
 config = get_config()
 # Set default model to Claude Sonnet 4 with online
-curr_model = "anthropic/claude-sonnet-4:online"
+curr_model = "openrouter/anthropic/claude-sonnet-4:online"
 if curr_model not in config["models"]:
     curr_model = next(iter(config["models"]))
 
@@ -328,8 +328,10 @@ async def on_message(new_msg: discord.Message) -> None:
     try:
         async with new_msg.channel.typing():
             # Create the completion request with optional tools
+            # Remove the provider prefix for the API call
+            api_model_name = model if not model_variant else f"{model}:{model_variant}"
             create_params = {
-                "model": provider_slash_model,  # Use full model name with variant
+                "model": api_model_name,  # Use model name without provider prefix
                 "messages": messages[::-1],
                 "stream": True
             }
