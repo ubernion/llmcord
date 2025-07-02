@@ -501,8 +501,15 @@ async def on_message(new_msg: discord.Message) -> None:
             
             # Handle tool calls if any - loop until no more tools requested
             while tool_calls and finish_reason == "tool_calls":
-                # Process tool calls quietly
+                # Process tool calls and show indicator
                 tool_results = []
+                
+                # Send a tool usage indicator
+                if response_msgs:
+                    await response_msgs[-1].reply(content=f"🔧 Using tool: {', '.join([tc['function']['name'] for tc in tool_calls])}...", silent=True)
+                else:
+                    tool_msg = await new_msg.reply(content=f"🔧 Using tool: {', '.join([tc['function']['name'] for tc in tool_calls])}...", silent=True)
+                    response_msgs.append(tool_msg)
                 
                 for tool_call in tool_calls:
                     try:

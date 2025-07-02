@@ -484,7 +484,7 @@ class DiscordTools:
                 "removeBase64Images": True  # Don't include base64 images in response
             }
             
-            result = app.scrape_url(url, params=scrape_options)
+            result = app.scrape_url(url)
             
             # Extract relevant data
             content = result.get(format, result.get("text", ""))
@@ -678,7 +678,7 @@ class DiscordTools:
             results = []
             for idx, url in enumerate(urls):
                 try:
-                    result = app.scrape_url(url, params=scrape_options)
+                    result = app.scrape_url(url)
                     content = result.get(format, result.get("text", ""))
                     metadata = result.get("metadata", {})
                     
