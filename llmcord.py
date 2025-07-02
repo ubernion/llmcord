@@ -499,8 +499,8 @@ async def on_message(new_msg: discord.Message) -> None:
 
                         last_task_time = datetime.now().timestamp()
             
-            # Handle tool calls if any
-            if tool_calls and finish_reason == "tool_calls":
+            # Handle tool calls if any - loop until no more tools requested
+            while tool_calls and finish_reason == "tool_calls":
                 # Process tool calls quietly
                 tool_results = []
                 
@@ -549,12 +549,24 @@ async def on_message(new_msg: discord.Message) -> None:
                     final_response = await openai_client.chat.completions.create(
                         model=api_model_name,  # Use the same model name format as initial request
                         messages=messages[::-1],
-                        stream=False
+                        stream=False,
+                        tools=tools,  # Keep tools available for continued use
+                        tool_choice="auto"
                     )
                     
-                    if final_response.choices[0].message.content:
+                    final_msg = final_response.choices[0].message
+                    finish_reason = final_response.choices[0].finish_reason
+                    
+                    # Check if more tools are requested
+                    if finish_reason == "tool_calls" and hasattr(final_msg, 'tool_calls') and final_msg.tool_calls:
+                        # Add assistant message and prepare for next loop iteration
+                        messages.insert(0, final_msg.dict())
+                        tool_calls = final_msg.tool_calls
+                        continue  # Loop back to process more tools
+                    
+                    elif final_msg.content:
                         # Send the final response naturally
-                        final_content = final_response.choices[0].message.content
+                        final_content = final_msg.content
                         
                         # Split long messages if needed
                         if len(final_content) > 2000:
@@ -569,9 +581,13 @@ async def on_message(new_msg: discord.Message) -> None:
                                 await response_msgs[-1].reply(content=final_content, suppress_embeds=True, silent=True)
                             else:
                                 await new_msg.reply(content=final_content, suppress_embeds=True, silent=True)
-                
+                    
+                    # Exit the tool loop
+                    tool_calls = None
+                    
                 except Exception as e:
                     logging.error(f"Error getting final response after tools: {e}")
+                    tool_calls = None  # Exit loop on error
 
             # Log cache discount if available
             if is_anthropic and cache_discount is not None:
