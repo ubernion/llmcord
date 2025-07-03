@@ -33,7 +33,7 @@ EMBED_COLOR_INCOMPLETE = discord.Color.orange()
 STREAMING_INDICATOR = "..."
 EDIT_DELAY_SECONDS = 1
 
-MAX_MESSAGE_NODES = 500
+MAX_MESSAGE_NODES = 2000  # Increased for better memory
 
 
 def replace_env_vars(obj: Any) -> Any:
@@ -263,11 +263,48 @@ async def on_message(new_msg: discord.Message) -> None:
 
     max_text = config.get("max_text", 100000)
     max_images = config.get("max_images", 5) if accept_images else 0
-    max_messages = config.get("max_messages", 25)
+    max_messages = config.get("max_messages", 50)  # Increased for better context
 
     # Build message chain and set user warnings
     messages = []
     user_warnings = set()
+    
+    # First, try to get recent channel context if we have tools
+    if use_tools and len(messages) < max_messages:
+        try:
+            # Get last 30 messages from channel for context
+            recent_msgs = [m async for m in new_msg.channel.history(limit=30)]
+            recent_msgs.reverse()  # Make chronological
+            
+            # Add recent messages that mention the bot or are from the bot
+            for msg in recent_msgs:
+                if len(messages) >= max_messages:
+                    break
+                if msg.id == new_msg.id:
+                    continue  # Skip the current message, we'll add it properly
+                if msg.author == discord_bot.user or discord_bot.user in msg.mentions or "claude" in msg.content.lower():
+                    # Process this message
+                    node = msg_nodes.setdefault(msg.id, MsgNode())
+                    async with node.lock:
+                        if node.text is None:
+                            node.text = msg.content
+                            node.role = "assistant" if msg.author == discord_bot.user else "user"
+                            node.user_id = msg.author.id if node.role == "user" else None
+                            node.display_name = msg.author.display_name if node.role == "user" else None
+                    
+                    if node.text:
+                        content = node.text[:max_text]
+                        if node.role == "user" and node.display_name:
+                            content = f"[{node.display_name}]: {content}"
+                        
+                        message = dict(content=content, role=node.role)
+                        if accept_usernames and node.user_id != None:
+                            message["name"] = str(node.user_id)
+                        messages.append(message)
+        except Exception as e:
+            logging.warning(f"Failed to get recent context: {e}")
+    
+    # Now build the reply chain as before
     curr_msg = new_msg
 
     while curr_msg != None and len(messages) < max_messages:
@@ -504,38 +541,7 @@ async def on_message(new_msg: discord.Message) -> None:
                 # Process tool calls and show indicator
                 tool_results = []
                 
-                # Send a tool usage indicator with descriptive phrases
-                tool_descriptions = []
-                for tc in tool_calls:
-                    # Handle both dict and object formats
-                    if isinstance(tc, dict):
-                        name = tc['function']['name']
-                    else:
-                        name = tc.function.name
-                    # Map tool names to descriptive phrases
-                    desc_map = {
-                        'get_recent_messages': 'regarde les derniers messages',
-                        'search_messages': 'cherche dans les messages',
-                        'get_channel_info': 'vérifie les infos du channel',
-                        'list_channels': 'liste les channels disponibles',
-                        'get_messages_from_channel': 'récupère des messages d\'un autre channel',
-                        'scrape_webpage': 'scrape une page web',
-                        'deep_research': 'fait une recherche approfondie',
-                        'search_and_scrape': 'recherche et scrape sur le web',
-                        'batch_scrape_webpages': 'scrape plusieurs pages',
-                        'crawl_website': 'crawl un site web',
-                        'extract_structured_data': 'extrait des données structurées'
-                    }
-                    desc = desc_map.get(name, name.replace('_', ' '))
-                    tool_descriptions.append(desc)
-                
-                if response_msgs:
-                    await response_msgs[-1].reply(content=f"_{', '.join(tool_descriptions)}_", silent=True)
-                else:
-                    tool_msg = await new_msg.reply(content=f"_{', '.join(tool_descriptions)}_", silent=True)
-                    response_msgs.append(tool_msg)
-                    msg_nodes[tool_msg.id] = MsgNode(parent_msg=new_msg)
-                    await msg_nodes[tool_msg.id].lock.acquire()
+                # Process tool calls silently - no indicator messages
                 
                 for tool_call in tool_calls:
                     try:
