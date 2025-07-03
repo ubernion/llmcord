@@ -268,9 +268,11 @@ async def on_message(new_msg: discord.Message) -> None:
     # Build message chain and set user warnings
     messages = []
     user_warnings = set()
+    processed_msg_ids = set()  # Track which messages we've already added
     
-    # First, try to get recent channel context if we have tools
-    if use_tools and len(messages) < max_messages:
+    # First, try to get recent channel context if we have tools - DISABLED for now
+    # This was causing duplicate messages
+    if False and use_tools and len(messages) < max_messages:
         try:
             # Get last 30 messages from channel for context
             recent_msgs = [m async for m in new_msg.channel.history(limit=30)]
